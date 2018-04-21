@@ -1,0 +1,7 @@
+R1 R2 10
+R1 R3 6
+H1 R1 2
+R1 H2 Inf
+R1 R4 Inf
+R1 R2 1
+R1 R2 5
