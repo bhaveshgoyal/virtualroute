@@ -3,6 +3,7 @@ import errno
 import socket
 import selectors2 as selectors
 import json
+import copy
 
 PORT = 9020
 
@@ -33,7 +34,7 @@ class Graph:
 		self.routes = {}
 		self.serialize = ""
 		self.edges = []
-
+		self.nbrs = []
 
 	def __repr__(self):
 
@@ -75,7 +76,7 @@ class Graph:
 		self.routes = routes
 
 
-	def bellman_on_src(self, src):
+	def bellman_on_src_2(self, src):
 		self.update_edges_from_routes()
 		print len(self.edges)
 		if not len(self.v):
@@ -90,8 +91,29 @@ class Graph:
 		self.routes[src] = dist
 		return dist
 
+	def bellman_on_src(self, src):
+		if not len(self.v):
+			return "Please initialize Graph lables"
+		dist = {}	
+		dist = dist.fromkeys(self.v, float("Inf"))
 
-	def bellman_on_all(self):
+		dist[src] = float(0)
+		
+		for nbr in self.nbrs:
+			dist[nbr] = self.routes[src][nbr]
+		
+		print "distb: " + str(dist) + " src: " + src
+		print self.routes
+		
+		for vertex in self.v:
+			for nbr in self.nbrs:
+				dist[vertex] = min(dist[vertex], float(dist[nbr] + self.routes[nbr][vertex]))
+		
+		self.routes[src] = dist
+		print "dist: " + str(dist)
+		return dist
+
+	def bellman_on_all_2(self):
 		dist = {}
 		self.update_edges_from_routes()
 		for each in self.v:
@@ -111,31 +133,44 @@ class Graph:
 		except IOError:
 			print "Creating router config for %s..." % (src)
 			pass
-		with open(filename, "a") as f:
+		with open(filename, "w") as f:
 			f.write(edge)
 
 
 	def init_config(self, label, fname, nname):
 		filename = "./" + label + "/weights"
 		direct_conn = [label]
+		file_content = ""
+		self.serialize = ""
 		with open(fname, 'r') as fp:
 			for each in fp.readlines():
-				self.serialize += each
 				edge = each.split(' ')
 				if label == edge[0]:
 					direct_conn.append(edge[1])
-					self.create_config(label, each, filename)
+					self.nbrs.append(edge[1])
+					file_content += each
+					self.serialize += each
+#					self.create_config(label, each, filename)
 				elif label == edge[1]:
 					direct_conn.append(edge[0])
-					self.create_config(label, each, filename)
+					self.nbrs.append(edge[0])
+					file_content += each
+					self.serialize += each
+#					self.create_config(label, each, filename)
+		
+		self.nbrs = list(set(self.nbrs))
 		direct_conn = list(set(direct_conn))
-
+		
 		with open(nname, 'r') as fp:
 			for each in fp.readlines():
 				if each.rstrip() not in direct_conn:
 					inf_route = label + " " + each.rstrip() + " Inf\n"
-					self.create_config(label, inf_route, filename)
+					file_content += inf_route
+#					self.create_config(label, inf_route, filename)
 					direct_conn.append(each.rstrip())
+		
+		print file_content
+		self.create_config(label, file_content, filename)
 		
 		for node in direct_conn: #direct_conn now contains all nodes
 			dist = {}
@@ -157,8 +192,9 @@ class peerSock:
 		self.sock.connect((host, port))
 		print "Connected to %s:%s" % (host, port)
 	
-	def sendmsg(self, msg, topoUpdate):
-		obj = json.dumps({'data': msg, 'topoUpdate': topoUpdate})
+	def sendmsg(self, msg, from_label):
+		obj = json.dumps({'data': msg, 'from_label': from_label})
+#		obj = json.dumps({'data': msg, 'from_label': from_label, 'topoUpdate': topoUpdate})
 		sent = self.sock.send(obj.encode('utf-8'))
 		if sent == 0:
 			print "Connection Broken. Couldn't send"

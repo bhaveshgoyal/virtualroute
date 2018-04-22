@@ -19,9 +19,9 @@ def set_init_graph(weight_file, topo_file):
 	g.init_config(label, weight_file, topo_file)
 	g.bellman_on_src(label)
 	curr_table = g
-	print curr_table.get_routes()
+	print "Initial Table:\n" + str(curr_table.get_routes())
 
-def send_to_nbrs(nbrs, topoUpdate):
+def send_to_nbrs(nbrs):
 	global curr_table
 	global label
 
@@ -30,6 +30,7 @@ def send_to_nbrs(nbrs, topoUpdate):
 		print label + " Sending distance vector to " + each
 		print curr_table.get_routes()
 		nbr.connect(each)
+#		nbr.sendmsg(curr_table.get_routes()[label], label, topoUpdate)
 		nbr.sendmsg(curr_table.get_routes()[label], label)
 
 
@@ -43,13 +44,17 @@ def check_weight_update(weight_file, topo_file, nbrs):
 	update.init_config(label, weight_file, topo_file)
 	lock.acquire()
 	if curr_table.serialize != update.serialize:
+		curr_table.serialize = copy.deepcopy(update.serialize)
 		print "Topology update detected. Rerouting..."
-		update.bellman_on_all()
-		curr_table = copy.deepcopy(update)
+		update.bellman_on_src(label)
+		curr_table.routes[label] = copy.deepcopy(update.routes[label])
+		curr_table.set_routes(copy.deepcopy(update.get_routes()))
+		curr_table.bellman_on_src(label)
 		print curr_table.get_routes()
-		send_to_nbrs(nbrs, label)
+#		send_to_nbrs(nbrs, True)
+		send_to_nbrs(nbrs)
 	lock.release()
-	threading.Timer(period, check_weight_update, [label, weight_file, topo_file, nbrs]).start() # Trigger Periodic Check
+	threading.Timer(period, check_weight_update, [weight_file, topo_file, nbrs]).start() # Trigger Periodic Check
 		
 
 if __name__ == "__main__":
@@ -78,9 +83,10 @@ if __name__ == "__main__":
 		for conn in read:
 			if conn == sys.stdin:
 				command = sys.stdin.readline()
-				send_to_nbrs(nbrs, label)
+#				send_to_nbrs(nbrs, False)
+				send_to_nbrs(nbrs)
 				if not timer_init:
-#					check_weight_update(label, 'weights', 'nodes', nbrs)
+					check_weight_update('weights', 'nodes', nbrs)
 					timer_init = True
 			elif conn == server:
 				cli, addr = conn.accept()
@@ -90,13 +96,17 @@ if __name__ == "__main__":
 				rcvd_route = obj['data']
 				unidict = {k.encode('utf8'): float(v) for k, v in rcvd_route.items()}
 				rcvd_route = unidict
-				rcvd_label = obj['topoUpdate']
+				rcvd_label = obj['from_label']
+#				topo_update = obj['topoUpdate']
 				lock.acquire()
 				old_routes = copy.deepcopy(curr_table.get_routes())
 				print rcvd_label
 #				old_routes[rcvd_label] = rcvd_route[rcvd_label]
 				curr_table.routes[rcvd_label] = rcvd_route
 				curr_table.bellman_on_src(label) # Compute distance from itself to all
+#				if topo_update:
+#					print "Topology Update from neighbour"
+#					set_init_graph('weights', 'nodes') # Get Initial Graph(only neighbours)
 #				for src in rcvd_route:
 #					for dst in rcvd_route[src]:
 #						if topo_update or float(old_routes[src][dst]) > float(rcvd_route[src][dst]):
@@ -105,7 +115,8 @@ if __name__ == "__main__":
 					print "Routing Table updated"
 #					curr_table.set_routes(old_routes)
 					print curr_table.get_routes() 
-					send_to_nbrs(nbrs, label)
+#					send_to_nbrs(nbrs, topo_update)
+					send_to_nbrs(nbrs)
 				else:
 					print "No new update"
 				lock.release()
