@@ -32,6 +32,8 @@ class Graph:
 	def __init__(self):
 		self.routes = {}
 		self.serialize = ""
+		self.edges = []
+
 
 	def __repr__(self):
 
@@ -51,6 +53,11 @@ class Graph:
 		self.routes[src][dst] = float(w)
 		return self.routes
 
+	def update_edges_from_routes(self):
+		self.edges = []
+		for node in self.routes:
+			for dst in self.routes[node]:
+				self.edges.append(Edge(node, dst, float(self.routes[node][dst])))
 
 	def read_graph_from_file(self, fname):	
 		with open(fname, 'r') as fp:
@@ -58,7 +65,7 @@ class Graph:
 				node = each.split(' ')
 				node = map(lambda s: s.rstrip(), node)
 				self.routes[node[0]][node[1]] = float(node[2])
-				self.routes[node[1]][node[0]] = float(node[2])
+				self.routes[node[1]][node[0]] = float(node[2])		
 
 	def get_routes(self, path=None):
 		return self.routes
@@ -68,27 +75,27 @@ class Graph:
 		self.routes = routes
 
 
-	def bellman_on_src(self, src, edges):
+	def bellman_on_src(self, src):
+		self.update_edges_from_routes()
+		print len(self.edges)
 		if not len(self.v):
 			return "Please initialize Graph lables"
 		dist = {}
 		dist = dist.fromkeys(self.v, float("Inf"))
-		dist[src] = 0
+		dist[src] = float(0)
 		for i in range(len(self.v) - 1):
-			for edge in edges:
+			for edge in self.edges:
 				if dist[edge.src] != float("Inf") and dist[edge.src] + edge.w < dist[edge.dst]:
-					dist[edge.dst] = dist[edge.src] + edge.w
+					dist[edge.dst] = float(dist[edge.src] + edge.w)
+		self.routes[src] = dist
 		return dist
 
 
 	def bellman_on_all(self):
 		dist = {}
-		edges = []
-		for node in self.routes:
-			for dst in self.routes[node]:
-				edges.append(Edge(node, dst, float(self.routes[node][dst])))
+		self.update_edges_from_routes()
 		for each in self.v:
-			dist[each] = self.bellman_on_src(each, edges)
+			dist[each] = self.bellman_on_src(each)
 
 		self.routes = dist
 		return dist
@@ -96,11 +103,7 @@ class Graph:
 	# Helper Functions
 	def create_config(self, src, edge, filename):
 		if not os.path.exists(os.path.dirname(filename)):
-			try:
-				os.makedirs(os.path.dirname(filename))
-			except OSError as exc: # Guard against race condition
-				if exc.errno != errno.EEXIST:
-					raise
+			os.makedirs(os.path.dirname(filename))
 		try:	
 			with open(filename, "r") as f:
 				if edge in f.readlines():
@@ -134,10 +137,10 @@ class Graph:
 					self.create_config(label, inf_route, filename)
 					direct_conn.append(each.rstrip())
 		
-		for node in direct_conn:
+		for node in direct_conn: #direct_conn now contains all nodes
 			dist = {}
-			self.routes[node] = dist.fromkeys(direct_conn, float("Inf"))
-		self.v = direct_conn
+			self.routes[node] = dist.fromkeys(direct_conn, float("Inf")) # Initialize all distances to Inf
+		self.v = direct_conn # All vertices in the topology
 		self.read_graph_from_file(filename)
 
 class peerSock:
@@ -156,7 +159,7 @@ class peerSock:
 	
 	def sendmsg(self, msg, topoUpdate):
 		obj = json.dumps({'data': msg, 'topoUpdate': topoUpdate})
-		sent = self.sock.send(obj)
+		sent = self.sock.send(obj.encode('utf-8'))
 		if sent == 0:
 			print "Connection Broken. Couldn't send"
 		return sent

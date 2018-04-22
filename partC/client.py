@@ -10,27 +10,33 @@ import time, threading
 lock = threading.Lock()
 period = 7 # Checks for Updates Every 7 seconds
 
-def set_init_graph(label, weight_file, topo_file):
+def set_init_graph(weight_file, topo_file):
 	global curr_table
-	
+	global label
+
 	path = './' + label + '/weights'
 	g = Graph()
 	g.init_config(label, weight_file, topo_file)
-	g.bellman_on_all()
+	g.bellman_on_src(label)
 	curr_table = g
-
+	print curr_table.get_routes()
 
 def send_to_nbrs(nbrs, topoUpdate):
 	global curr_table
+	global label
+
 	for each in nbrs:
 		nbr = peerSock()
-		print "Sending distance vector to " + each
+		print label + " Sending distance vector to " + each
+		print curr_table.get_routes()
 		nbr.connect(each)
-		nbr.sendmsg(curr_table.get_routes(), topoUpdate)
+		nbr.sendmsg(curr_table.get_routes()[label], label)
 
 
-def check_weight_update(label, weight_file, topo_file, nbrs):
+def check_weight_update(weight_file, topo_file, nbrs):
 	global curr_table
+	global label
+
 	print "Checking for Topology Changes"
 	path = './' + label + '/weights'
 	update = Graph()
@@ -41,20 +47,21 @@ def check_weight_update(label, weight_file, topo_file, nbrs):
 		update.bellman_on_all()
 		curr_table = copy.deepcopy(update)
 		print curr_table.get_routes()
-		send_to_nbrs(nbrs, True)
+		send_to_nbrs(nbrs, label)
 	lock.release()
 	threading.Timer(period, check_weight_update, [label, weight_file, topo_file, nbrs]).start() # Trigger Periodic Check
 		
 
 if __name__ == "__main__":
 	global curr_table
-
+	global label
+	
 	if len(sys.argv) < 3:
 		print "Usage args: <Node-Label> [List of IPs of Neighbours]"
 		sys.exit(0)
 	label = sys.argv[1]
 	
-	set_init_graph(label, 'weights', 'nodes') # Get Initial Graph(only neighbours)
+	set_init_graph('weights', 'nodes') # Get Initial Graph(only neighbours)
 	timer_init = False
 	server = socket.socket()
 	server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -63,7 +70,7 @@ if __name__ == "__main__":
 	server.listen(10) # Atmost 10 clients
 
 	nbrs = sys.argv[2:]
-	
+
 	input = [sys.stdin, server]
 	while True:
 		print "Waiting on select"
@@ -71,28 +78,34 @@ if __name__ == "__main__":
 		for conn in read:
 			if conn == sys.stdin:
 				command = sys.stdin.readline()
-				send_to_nbrs(nbrs, False)
+				send_to_nbrs(nbrs, label)
 				if not timer_init:
-					check_weight_update(label, 'weights', 'nodes', nbrs)
+#					check_weight_update(label, 'weights', 'nodes', nbrs)
 					timer_init = True
 			elif conn == server:
 				cli, addr = conn.accept()
-				obj =  json.loads(cli.recv(1024))
+				recv_data = cli.recv(1024)
+				obj = json.loads(recv_data.decode('utf-8'))
+				print obj
 				rcvd_route = obj['data']
-				topo_update = obj['topoUpdate']
+				unidict = {k.encode('utf8'): float(v) for k, v in rcvd_route.items()}
+				rcvd_route = unidict
+				rcvd_label = obj['topoUpdate']
 				lock.acquire()
 				old_routes = copy.deepcopy(curr_table.get_routes())
-				print old_routes
-				for src in rcvd_route:
-					for dst in rcvd_route[src]:
-						if topo_update or float(old_routes[src][dst]) > float(rcvd_route[src][dst]):
-							old_routes[src][dst] = rcvd_route[src][dst]
+				print rcvd_label
+#				old_routes[rcvd_label] = rcvd_route[rcvd_label]
+				curr_table.routes[rcvd_label] = rcvd_route
+				curr_table.bellman_on_src(label) # Compute distance from itself to all
+#				for src in rcvd_route:
+#					for dst in rcvd_route[src]:
+#						if topo_update or float(old_routes[src][dst]) > float(rcvd_route[src][dst]):
+#							old_routes[src][dst] = rcvd_route[src][dst]
 				if old_routes != curr_table.get_routes():
 					print "Routing Table updated"
-					curr_table.set_routes(old_routes)
-					curr_table.bellman_on_all()
+#					curr_table.set_routes(old_routes)
 					print curr_table.get_routes() 
-					send_to_nbrs(nbrs, False)
+					send_to_nbrs(nbrs, label)
 				else:
 					print "No new update"
 				lock.release()
