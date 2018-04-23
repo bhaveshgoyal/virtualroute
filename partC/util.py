@@ -4,6 +4,7 @@ import socket
 import selectors2 as selectors
 import json
 import copy
+from datetime import datetime
 
 PORT = 9020
 
@@ -35,9 +36,12 @@ class Graph:
 		self.serialize = ""
 		self.edges = []
 		self.nbrs = []
-
+		self.label = ""
+		self.hops = {}
+		self.start = ""
+		self.end = ""
+	
 	def __repr__(self):
-
 		buff = str(self.routes.keys())
 		buff += "\n----\n"
 		for each in self.routes:
@@ -45,6 +49,33 @@ class Graph:
 		buff += "----"
 		return buff
 
+	def printGraph(self):
+		buff = "[" + self.label + "] - Application level Routing table:\n"
+		buff = "Source\tDestination\tWeight\tNextHop\n"
+		for each in self.routes[self.label].keys():
+		
+			if self.hops[self.label][each] == "":
+				buff += self.label + "\t" + each + "\t\t" + str(self.routes[self.label][each]) + "\tvia *\n"
+			else:
+				buff += self.label + "\t" + each + "\t\t" + str(self.routes[self.label][each]) + "\tvia " + str(self.hops[self.label][each]) + "\n"
+	
+		if self.start != "":
+			convergence = (self.end - self.start)
+			convergence = float(convergence.total_seconds()*1000)
+			buff +=  "Current config convergence time: " + str(convergence) + "ms"
+
+		buff += "\nDistance vector of neighbours:\n"
+		for each in self.nbrs:
+			buff += str(each) + ": " + str(self.routes[each]) + "\n"
+		
+		buff +=  "-------------\n"
+
+		routingout = self.label + "_routes"
+		
+		with open(routingout, "w+") as fp:
+			fp.write(buff)
+		
+		return buff
 
 	def get_labels(self):
 		return self.routes.keys()
@@ -74,6 +105,14 @@ class Graph:
 	
 	def set_routes(self, routes):
 		self.routes = routes
+	
+
+	def get_hops(self, path=None):
+		return self.hops
+
+	
+	def set_hops(self, hops):
+		self.hops = hops
 
 
 	def bellman_on_src_2(self, src):
@@ -90,7 +129,7 @@ class Graph:
 					dist[edge.dst] = float(dist[edge.src] + edge.w)
 		self.routes[src] = dist
 		return dist
-
+	
 	def bellman_on_src(self, src):
 		if not len(self.v):
 			return "Please initialize Graph lables"
@@ -99,19 +138,22 @@ class Graph:
 
 		dist[src] = float(0)
 		
+		hops = {}
+		hops = hops.fromkeys(self.v, "")
+
 		for nbr in self.nbrs:
 			dist[nbr] = self.routes[src][nbr]
 		
-		print "distb: " + str(dist) + " src: " + src
-		print self.routes
-		
+		min_nbr = src	
 		for vertex in self.v:
 			for nbr in self.nbrs:
-				dist[vertex] = min(dist[vertex], float(dist[nbr] + self.routes[nbr][vertex]))
-
+				if dist[vertex] > float(dist[nbr] + self.routes[nbr][vertex]):
+					dist[vertex] = min(dist[vertex], float(dist[nbr] + self.routes[nbr][vertex]))
+					hops[vertex] = str(nbr)
+			
+		self.hops[src] = hops
 		self.routes[src] = dist
-		print "dist: " + str(dist)
-		
+		print "Distance vector after Bellman-Ford:\n" + str(dist)
 		for vertex in self.v:
 			for nbr in self.nbrs:
 				if float(dist[nbr] + self.routes[nbr][vertex]) < dist[vertex]:
@@ -119,6 +161,8 @@ class Graph:
 					while True:
 						pass
 		
+		self.end = datetime.now()
+		self.printGraph()
 		return dist
 
 	def bellman_on_all_2(self):
@@ -131,7 +175,7 @@ class Graph:
 		return dist
 	
 	# Helper Functions
-	def create_config(self, src, edge, filename):
+	def create_config(self, edge, filename):
 		if not os.path.exists(os.path.dirname(filename)):
 			os.makedirs(os.path.dirname(filename))
 		try:	
@@ -139,7 +183,7 @@ class Graph:
 				if edge in f.readlines():
 					return
 		except IOError:
-			print "Creating router config for %s..." % (src)
+			print "Creating router config for %s..." % (self.label)
 			pass
 		with open(filename, "w") as f:
 			f.write(edge)
@@ -150,6 +194,7 @@ class Graph:
 		direct_conn = [label]
 		file_content = ""
 		self.serialize = ""
+		self.label = label
 		with open(fname, 'r') as fp:
 			for each in fp.readlines():
 				edge = each.split(' ')
@@ -177,12 +222,14 @@ class Graph:
 #					self.create_config(label, inf_route, filename)
 					direct_conn.append(each.rstrip())
 		
-		print file_content
-		self.create_config(label, file_content, filename)
+		print "Weight File: " + file_content
+		self.create_config(file_content, filename)
 		
 		for node in direct_conn: #direct_conn now contains all nodes
 			dist = {}
 			self.routes[node] = dist.fromkeys(direct_conn, float("Inf")) # Initialize all distances to Inf
+			hops = {}
+			self.hops[node] = dist.fromkeys(direct_conn, "-")
 		self.v = direct_conn # All vertices in the topology
 		self.read_graph_from_file(filename)
 
@@ -202,7 +249,6 @@ class peerSock:
 	
 	def sendmsg(self, msg, from_label):
 		obj = json.dumps({'data': msg, 'from_label': from_label})
-#		obj = json.dumps({'data': msg, 'from_label': from_label, 'topoUpdate': topoUpdate})
 		sent = self.sock.send(obj.encode('utf-8'))
 		if sent == 0:
 			print "Connection Broken. Couldn't send"
