@@ -23,7 +23,8 @@ sudo python start.py -d
 Find more details on configuring ripd and zebra daemons in the Report.
 
 
-After you have the mininext CLI and quagga hosts up and running, you could proceed with running RIP over all the hosts.
+After you have the mininext CLI and quagga hosts up and running ($>sudo python start.py), you could proceed with running RIP over all the hosts.
+
 To operate RIP, open xterm for each of the hosts:
 mininext$> xterm H1 [Extra Host Window to trigger RIP]
 mininext$> xterm H1
@@ -41,11 +42,12 @@ Now, on each host run the rip client:
 python client.py <Host-label> <IPs to neighbours>
 
 For the given topology, the commands would look like:
-python client.py H1 172.0.1.1
-python client.py R1 172.0.1.2 172.0.2.1 172.0.3.1
-python client.py R2 172.0.1.1 172.0.3.1
-python client.py R3 172.0.4.1 172.0.2.1 172.0.3.1
-python client.py R4 172.0.4.2
+On H1: python client.py H1 172.0.1.1
+On R1: python client.py R1 172.0.1.2 172.0.2.1 172.0.3.1
+On R2: python client.py R2 172.0.1.1 172.0.4.1
+On R3: python client.py R3 172.0.1.1 172.0.4.1
+On R4: python client.py R4 172.0.4.2 172.0.2.1 172.0.3.1
+On H2: python client.py H2 172.0.4.1
 
 After all servers are up, trigger rip using the provided trigger script.
 
