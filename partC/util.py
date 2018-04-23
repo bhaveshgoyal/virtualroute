@@ -108,9 +108,17 @@ class Graph:
 		for vertex in self.v:
 			for nbr in self.nbrs:
 				dist[vertex] = min(dist[vertex], float(dist[nbr] + self.routes[nbr][vertex]))
-		
+
 		self.routes[src] = dist
 		print "dist: " + str(dist)
+		
+		for vertex in self.v:
+			for nbr in self.nbrs:
+				if float(dist[nbr] + self.routes[nbr][vertex]) < dist[vertex]:
+					print "Negative Weight Cycle Detected. Abort..."
+					while True:
+						pass
+		
 		return dist
 
 	def bellman_on_all_2(self):
